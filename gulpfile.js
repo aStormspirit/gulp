@@ -8,6 +8,8 @@ const clean = require("gulp-clean");
 const svgSprite = require("gulp-svg-sprite");
 const svgmin = require("gulp-svgmin");
 const cheerio = require("gulp-cheerio");
+const fileinclude = require("gulp-file-include");
+const replace = require("gulp-replace");
 
 const srcFolder = "./src";
 const buildFolder = "./dist";
@@ -22,6 +24,21 @@ const paths = {
   buildJsFolder: `${buildFolder}/js`,
   srcPartialsFolder: `${srcFolder}/partials`,
   resourcesFolder: `${srcFolder}/resources`,
+  srcHtml: `${srcFolder}/*.html`,
+  srcPartials: `${srcFolder}/partials/**/*.html`,
+};
+
+// HTML с file-include
+const html = () => {
+  return src(paths.srcHtml)
+    .pipe(
+      fileinclude({
+        prefix: '@@', // Префикс для включения файлов
+        basepath: '@file', // Путь для поиска файлов
+        indent: true, // Сохраняем отступы
+      })
+    )
+    .pipe(dest(buildFolder));
 };
 
 // javaScripts
@@ -29,7 +46,7 @@ const js = () => {
   return src(paths.srcMainJs)
     .pipe(concat("main.min.js"))
     .pipe(uglify())
-    .pipe(dest("src/js"))
+    .pipe(dest(`${buildFolder}/js`))
     .pipe(sync.stream());
 };
 
@@ -45,29 +62,21 @@ const styles = () => {
     )
     .pipe(concat("style.min.css"))
     .pipe(scss({ outputStyle: "compressed" }))
-    .pipe(dest("src/css"))
+    .pipe(dest(`${buildFolder}/css`))
     .pipe(sync.stream());
 };
 
-// HTML
-const html = () => {
-  return src("src/*.html").pipe(dest("dist"));
-};
-
 const watcher = () => {
-  watch("src/scss/**/*.scss", series(styles));
-  watch("src/js/main.js", series(js, reload));
-  watch("src/*.html", series(html, reload));
+  watch(paths.srcScss, series(styles));
+  watch(paths.srcMainJs, series(js, reload));
+  watch([paths.srcHtml, paths.srcPartials], series(html, reload));
 };
 
 const server = (done) => {
   sync.init({
     server: {
-      baseDir: "src/",
+      baseDir: buildFolder,
     },
-    // cors: true,
-    // notify: false,
-    // ui: false,
   });
   done();
 };
@@ -78,13 +87,11 @@ const reload = (done) => {
 };
 
 const cleanDist = () => {
-  return src("dist").pipe(clean());
+  return src(buildFolder).pipe(clean());
 };
 
-const building = () => {
-  return src(["src/css/style.min.css", "src/js/main.min.js", "src/*.html"], {
-    base: "src",
-  }).pipe(dest("dist"));
+const copyResources = () => {
+  return src(`${srcFolder}/resources/**/*`).pipe(dest(`${buildFolder}/resources`));
 };
 
 const svgSprites = () => {
@@ -121,13 +128,21 @@ const svgSprites = () => {
     .pipe(dest(paths.buildImgFolder));
 };
 
+// Обновленная задача build
+exports.build = series(
+  cleanDist, 
+  parallel(styles, js, html, svgSprites, copyResources)
+);
+
+// Задача по умолчанию для разработки
+exports.default = series(
+  parallel(styles, js, html, svgSprites, copyResources),
+  parallel(server, watcher)
+);
+
 exports.styles = styles;
 exports.js = js;
+exports.html = html;
 exports.watcher = watcher;
 exports.server = server;
-exports.reload = reload;
-exports.html = html;
 exports.svgSprites = svgSprites;
-
-exports.build = series(cleanDist, building);
-exports.default = parallel(styles, js, server, watcher);
